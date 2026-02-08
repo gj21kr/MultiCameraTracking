@@ -1,0 +1,18 @@
+# Prometheus configuration for Tracking_101
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Tracking Pipeline Metrics
+  - job_name: 'tracking_pipeline'
+    static_configs:
+      - targets: ['host.docker.internal:8000']  # Metrics from main application
+        labels:
+          service: 'tracking'
+          environment: 'development'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

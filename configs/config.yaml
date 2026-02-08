@@ -1,0 +1,78 @@
+# Tracking_101 Configuration File
+
+# System configuration
+system:
+  log_level: INFO
+  num_workers: 4
+  device: "cuda:0"  # cuda:0, cpu
+
+# Camera configuration
+cameras:
+  - device_id: 0
+    width: 1920
+    height: 1080
+    fps: 30
+    buffer_size: 5
+    codec: "MJPG"
+
+  - device_id: 2
+    width: 1920
+    height: 1080
+    fps: 30
+    buffer_size: 5
+    codec: "MJPG"
+
+# Detection configuration
+detection:
+  model_type: "yolo26s"  # yolo26n, yolo26s, yolo26m, yolo26l, yolo26x
+  model_path: "models/yolo26s.pt"
+  confidence_threshold: 0.5
+  nms_threshold: 0.45
+  input_size: [640, 640]
+  device: "cuda:0"
+  fp16: true
+  int8: false  # INT8 quantization (for Jetson deployment)
+  classes: [0]  # 0 = person, [0, 2, 3, 5, 7] for multiple classes
+
+# Tracking configuration
+tracking:
+  algorithm: "bytetrack"  # bytetrack, deepsort
+  track_thresh: 0.5
+  match_thresh: 0.8
+  track_buffer: 30
+  min_box_area: 10
+  use_reid: true
+
+# ReID configuration
+reid:
+  model_name: "osnet_x1_0"  # osnet_x1_0, osnet_x0_75, osnet_ibn_x1_0
+  model_path: "models/osnet_x1_0.pth"
+  embedding_dim: 512
+  device: "cuda:0"
+
+# MLOps configuration
+mlops:
+  # MLflow settings
+  mlflow:
+    tracking_uri: "http://localhost:5000"
+    experiment_name: "tracking_101"
+    artifact_location: "./mlruns"
+
+  # Prometheus settings
+  prometheus:
+    port: 8000
+    enabled: true
+
+  # Drift detection settings
+  drift:
+    threshold: 0.1
+    check_interval: 100
+    reference_window: 1000
+    detection_window: 100
+
+# API configuration
+api:
+  host: "0.0.0.0"
+  port: 8080
+  cors_origins:
+    - "*"
