@@ -1,207 +1,134 @@
-# Tracking_101: Real-time Multi-Camera Tracking System with MLOps
+# Multi-Camera Tracking — WILDTRACK Demo
 
-포트폴리오용 1인 프로젝트: 4개 USB 카메라로 실시간 객체 추적 및 MLOps 파이프라인 통합
+Multi-camera pedestrian detection + tracking that turns a synchronized
+multi-view dataset (e.g. [WILDTRACK](https://www.epfl.ch/labs/cvlab/data/data-wildtrack/))
+into an annotated **per-camera + grid-montage demo video** with a single command.
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## Features
-
-- **Multi-Camera Tracking**: 4채널 동시 30fps 처리
-- **State-of-the-Art Models**: YOLO26 detection + ByteTrack + OSNet ReID
-- **MLOps Pipeline**: MLflow experiment tracking + Prometheus monitoring + Grafana dashboard
-- **Drift Detection**: 실시간 데이터 분포 변화 감지 및 알림
-- **Production Ready**: Docker 배포, REST API, CI/CD
-
-## Architecture
-
 ```
-Camera → Detection → Tracking → ReID → Cross-Camera Association
-  ↓         ↓          ↓         ↓              ↓
-MLflow   Prometheus  Grafana   DVC         A/B Testing
+FrameSource (WILDTRACK / video / images)
+        │   synchronized Dict[cam_id → Frame]
+        ▼
+   YOLO detection  →  per-camera ByteTrack-style tracking  →  (optional) OSNet ReID cross-camera association
+        │
+        ▼
+   per-camera mp4  +  N-view grid montage mp4   (cv2.VideoWriter, mp4v)
 ```
 
-자세한 내용은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참조하세요.
+### Demo — WILDTRACK, 7 synchronized cameras
 
-## Quick Start
+![WILDTRACK demo](demo/wildtrack_demo.gif)
 
-### 1. Installation
+*7 camera views of the same plaza, pedestrians detected and tracked per view.
+Full clip: [`demo/wildtrack_grid.mp4`](demo/wildtrack_grid.mp4) (80 frames, ~13 tracks/view).
+Reproduce with the WILDTRACK command in **Quick Start**.*
 
-```bash
-# Clone repository
-git clone https://github.com/yourusername/Tracking_101.git
-cd Tracking_101
+<details>
+<summary>Self-test demo (synthetic, no dataset download)</summary>
 
-# Create conda environment
-conda create -n tracking101 python=3.10
-conda activate tracking101
+![self-test demo](demo/self_test_demo.gif)
 
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 2. Start MLOps Stack
-
-```bash
-# Start MLflow, Prometheus, Grafana
-docker-compose up -d
-
-# Verify services
-curl http://localhost:5000  # MLflow
-curl http://localhost:9090  # Prometheus
-open http://localhost:3000  # Grafana (admin/admin)
-```
-
-### 3. Run Tracking
-
-```bash
-# Test with 2 cameras
-python scripts/run_tracking.py --cameras 0,2 --display
-
-# Production mode with MLflow tracking
-python scripts/run_tracking.py \
-    --cameras 0,1,2,3 \
-    --config configs/config.yaml \
-    --mlflow-tracking \
-    --experiment-name production_run
-```
-
-## Configuration
-
-Edit `configs/config.yaml`:
-
-```yaml
-cameras:
-  - device_id: 0
-    width: 1920
-    height: 1080
-    fps: 30
-
-detection:
-  model_type: yolo26s
-  confidence_threshold: 0.5
-
-tracking:
-  algorithm: bytetrack
-  use_reid: true
-
-mlops:
-  mlflow:
-    tracking_uri: http://localhost:5000
-  drift:
-    threshold: 0.1
-```
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) - System design & data flow
-- [Technical Spec](docs/SPEC.md) - API reference & module specs
-- [Roadmap](docs/ROADMAP.md) - Implementation timeline (6 weeks)
-- [Claude Guide](claude.md) - Development guide for Claude Code
-
-## Project Structure
-
-```
-Tracking_101/
-├── src/
-│   ├── tracking/       # Camera, detector, tracker, ReID
-│   ├── mlops/          # MLflow, Prometheus, drift detection
-│   ├── api/            # FastAPI server (TODO)
-│   └── utils/          # Configuration, visualization
-├── configs/            # YAML configs
-├── docs/               # Documentation
-├── scripts/            # Run scripts
-├── tests/              # Unit & integration tests
-├── models/             # Model weights
-└── data/               # Datasets (gitignored)
-```
-
-## Performance Targets
-
-| Metric | Target | Status |
-|--------|--------|--------|
-| FPS (4 cameras) | 30 | ⏳ TBD |
-| End-to-End Latency | < 100ms | ⏳ TBD |
-| MOTA (MOT17) | > 60% | ⏳ TBD |
-| IDF1 (MOT17) | > 55% | ⏳ TBD |
-
-## Development Status
-
-- [x] Project structure & documentation
-- [x] Core tracking pipeline (camera, detector, tracker, ReID)
-- [x] MLOps integration (MLflow, Prometheus, drift)
-- [ ] API server (FastAPI + WebSocket)
-- [ ] Unit & integration tests
-- [ ] CI/CD pipeline (GitHub Actions)
-- [ ] Docker optimization
-- [ ] Jetson deployment
-- [ ] Performance benchmarks
-- [ ] Demo video
-
-## Testing
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
-
-# Run benchmarks
-pytest tests/test_performance.py --benchmark-only
-```
-
-## Monitoring
-
-### Grafana Dashboard
-
-Access: http://localhost:3000 (admin/admin)
-
-**Metrics**:
-- Real-time FPS per camera
-- Detection/tracking latency (P50, P95, P99)
-- Active track count
-- Drift scores
-
-### Prometheus Queries
-
-```promql
-# Average FPS
-avg(tracking_fps_gauge)
-
-# 95th percentile latency
-histogram_quantile(0.95, detection_latency_seconds_bucket)
-```
-
-## Contributing
-
-This is a portfolio project, but contributions are welcome!
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file
-
-## Acknowledgments
-
-- [YOLO26](https://github.com/ultralytics/ultralytics) - Object detection
-- [ByteTrack](https://github.com/ifzhang/ByteTrack) - Multi-object tracking
-- [torchreid](https://github.com/KaiyangZhou/deep-person-reid) - Person re-identification
-- [MLflow](https://mlflow.org/) - Experiment tracking
-- [Prometheus](https://prometheus.io/) + [Grafana](https://grafana.com/) - Monitoring
-
-## Contact
-
-- **GitHub**: [@yourusername](https://github.com/yourusername)
-- **Portfolio**: [your-portfolio.com](https://your-portfolio.com)
-- **Email**: your.email@example.com
+Generated by `python scripts/make_demo.py --self-test` — proves the full
+source → detect → track → video pipeline with zero external data.
+</details>
 
 ---
 
-**Status**: 🚧 Active Development | **Start Date**: 2026-02 | **Target**: Production-ready in 6 weeks
+## Quick Start
+
+```bash
+# 1. Install
+pip install -r requirements.txt
+
+# 2. Smoke-test the whole pipeline with NO dataset download
+#    (downloads a YOLO weight + a sample image, generates outputs/grid.mp4)
+python scripts/make_demo.py --self-test
+
+# 3. Generate the real WILDTRACK demo (after downloading the dataset, see below)
+python scripts/make_demo.py \
+    --dataset wildtrack --root data/wildtrack \
+    --cameras 1,2,3,4,5,6,7 \
+    --max-frames 100 --model yolo26s --conf 0.4
+```
+
+Outputs land in `outputs/`:
+- `cam<N>.mp4` — one annotated video per camera
+- `grid.mp4` — all views tiled into a single montage
+- `run_meta.json` — model, device, frame counts, timing
+
+## Getting WILDTRACK
+
+WILDTRACK is **not** included (it contains identifiable pedestrians — only the
+generated videos are meant to be shared).
+
+1. Download from the [EPFL CVLAB page](https://www.epfl.ch/labs/cvlab/data/data-wildtrack/)
+   (7 synchronized 1080p cameras, 400 annotated frames @ 2 fps).
+2. Extract so the layout is:
+   ```
+   data/wildtrack/Image_subsets/C1/00000000.png ...
+   data/wildtrack/Image_subsets/C2/...
+   ...                          C7/...
+   ```
+3. Run the command in step 3 above.
+
+The loader (`from_wildtrack`) auto-discovers `C1..C7`, so any subset of cameras works.
+
+## Input modes (`scripts/make_demo.py`)
+
+| Mode | Flags |
+|------|-------|
+| Self-test (synthetic) | `--self-test` |
+| WILDTRACK / image-sequence dataset | `--dataset wildtrack --root <DIR>` |
+| Generic image folders (`<DIR>/C1`, `C2`, …) | `--dataset images --root <DIR>` |
+| One video file per camera | `--dataset video --videos a.mp4,b.mp4,...` |
+
+Useful flags: `--cameras 1,2,3` · `--max-frames N` · `--step K` · `--conf 0.4`
+· `--reid` (cross-camera IDs via OSNet) · `--device cpu` · `--no-grid` / `--no-per-camera`.
+
+`--device cuda:0` automatically falls back to CPU when no GPU is present.
+
+## How it works
+
+| Stage | File | Notes |
+|-------|------|-------|
+| Input abstraction | [src/data/sources.py](src/data/sources.py) | `FrameSource` → WILDTRACK / video / image-seq / synthetic |
+| Detection | [src/tracking/detector.py](src/tracking/detector.py) | Ultralytics YOLO (`yolo26s`, auto-falls back to `yolo11s`) |
+| Tracking | [src/tracking/tracker.py](src/tracking/tracker.py) | Per-camera ByteTrack-style association + constant-velocity smoothing |
+| Cross-camera ReID | [src/tracking/reid.py](src/tracking/reid.py) | OSNet (torchreid) embeddings + union-find global IDs |
+| Video output | [src/tracking/video_writer.py](src/tracking/video_writer.py) | `mp4v` per-camera + grid montage |
+| Orchestration | [scripts/make_demo.py](scripts/make_demo.py) | Single reproducible entry point |
+
+### Honest implementation notes
+- The "Kalman filter" in the tracker is a lightweight constant-velocity /
+  fixed-gain smoother, **not** a full Kalman filter — sufficient for the demo.
+- Cross-camera association is **per-frame** (no temporal smoothing across frames yet).
+- Cross-camera IDs require `--reid`; without torchreid installed, ReID falls back to
+  random embeddings and prints a loud warning (so it is never silently meaningless).
+
+## Tests
+
+```bash
+pytest tests/ -v          # smoke tests: sources, tracker union-find, video writer
+```
+
+## Not in scope
+
+This repository is intentionally focused on *dataset → demo video*. The following
+were part of an earlier over-scoped plan and are **not** implemented (kept only as
+possible future work): live USB-camera capture, MLflow/Prometheus/Grafana/DVC,
+FastAPI/WebSocket server, CI/CD, Docker production stack. The `src/mlops/` modules
+are frozen and import-optional.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Acknowledgments
+
+- [Ultralytics YOLO](https://github.com/ultralytics/ultralytics) — detection
+- [ByteTrack](https://github.com/ifzhang/ByteTrack) — tracking algorithm reference
+- [torchreid](https://github.com/KaiyangZhou/deep-person-reid) — OSNet ReID
+- [WILDTRACK](https://www.epfl.ch/labs/cvlab/data/data-wildtrack/) — multi-camera dataset

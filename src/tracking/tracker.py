@@ -378,10 +378,9 @@ class MultiCameraTracker:
         self.config = config
         self.num_cameras = num_cameras
 
-        # Create tracker for each camera
-        self.trackers: Dict[int, ByteTracker] = {
-            i: ByteTracker(config) for i in range(num_cameras)
-        }
+        # Per-camera trackers are created lazily keyed by the *actual* camera id
+        # (datasets like WILDTRACK use 1-based ids C1..C7, not 0..n-1).
+        self.trackers: Dict[int, ByteTracker] = {}
 
         self.next_global_id = 0
         self.global_id_map: Dict[Tuple[int, int], int] = {}  # (camera_id, track_id) -> global_id
@@ -405,15 +404,16 @@ class MultiCameraTracker:
 
         # Update each camera independently
         for camera_id, dets in detections.items():
-            if camera_id in self.trackers:
-                frame = frames.get(camera_id)
-                tracks = self.trackers[camera_id].update(dets, frame)
+            if camera_id not in self.trackers:
+                self.trackers[camera_id] = ByteTracker(self.config)
+            frame = frames.get(camera_id)
+            tracks = self.trackers[camera_id].update(dets, frame)
 
-                # Assign camera ID
-                for track in tracks:
-                    track.camera_id = camera_id
+            # Assign camera ID
+            for track in tracks:
+                track.camera_id = camera_id
 
-                all_tracks[camera_id] = tracks
+            all_tracks[camera_id] = tracks
 
         # Cross-camera association
         if self.config.use_reid:
@@ -421,53 +421,77 @@ class MultiCameraTracker:
 
         return all_tracks
 
-    def associate_cross_camera(self, all_tracks: Dict[int, List[Track]]):
-        """
-        Associate tracks across cameras using ReID embeddings.
+    def associate_cross_camera(
+        self,
+        all_tracks: Dict[int, List[Track]],
+        sim_thresh: float = 0.7,
+    ):
+        """Associate tracks across cameras using ReID embeddings (ADR-003).
+
+        Uses a 2-pass union-find over all (camera, track) pairs so that the
+        *first appearance* of a person in two views is linked symmetrically.
+        The previous single-pass logic required the match partner to already
+        own a global id, so first-appearance pairs were never connected
+        (tracker.py legacy bug). Global ids are persisted in ``global_id_map``
+        keyed by ``(camera_id, track_id)`` to stay stable across frames.
 
         Args:
             all_tracks: {camera_id: [Track]}
+            sim_thresh: Cosine-similarity threshold to link two tracks.
         """
-        # Collect all tracks with embeddings
-        tracks_with_embeddings = []
+        items: List[Tuple[int, Track]] = []
         for camera_id, tracks in all_tracks.items():
             for track in tracks:
                 if track.embedding is not None:
-                    tracks_with_embeddings.append((camera_id, track))
+                    items.append((camera_id, track))
 
-        # Assign global IDs
-        for camera_id, track in tracks_with_embeddings:
-            key = (camera_id, track.track_id)
+        n = len(items)
+        if n == 0:
+            return
 
-            if key not in self.global_id_map:
-                # Try to find matching track from other cameras
-                best_match = None
-                best_similarity = 0.7  # Threshold
+        # --- Pass 1: union-find across cameras by embedding similarity ---
+        parent = list(range(n))
 
-                for other_camera_id, other_track in tracks_with_embeddings:
-                    if camera_id == other_camera_id:
-                        continue
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
 
-                    if other_track.embedding is not None:
-                        similarity = self._cosine_similarity(
-                            track.embedding,
-                            other_track.embedding
-                        )
+        def union(a: int, b: int):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
 
-                        if similarity > best_similarity:
-                            best_similarity = similarity
-                            best_match = (other_camera_id, other_track.track_id)
+        for i in range(n):
+            cam_i, trk_i = items[i]
+            for j in range(i + 1, n):
+                cam_j, trk_j = items[j]
+                if cam_i == cam_j:
+                    continue  # never merge two tracks within the same view
+                if self._cosine_similarity(trk_i.embedding, trk_j.embedding) > sim_thresh:
+                    union(i, j)
 
-                if best_match is not None and best_match in self.global_id_map:
-                    # Use existing global ID
-                    self.global_id_map[key] = self.global_id_map[best_match]
-                else:
-                    # Create new global ID
-                    self.global_id_map[key] = self.next_global_id
-                    self.next_global_id += 1
+        # --- Pass 2: assign a global id per component (reuse persistent ids) ---
+        components: Dict[int, List[int]] = defaultdict(list)
+        for i in range(n):
+            components[find(i)].append(i)
 
-            # Assign global ID to track
-            track.global_id = self.global_id_map[key]
+        for members in components.values():
+            existing = None
+            for i in members:
+                cam, trk = items[i]
+                prior = self.global_id_map.get((cam, trk.track_id))
+                if prior is not None:
+                    existing = prior
+                    break
+            if existing is None:
+                existing = self.next_global_id
+                self.next_global_id += 1
+            for i in members:
+                cam, trk = items[i]
+                self.global_id_map[(cam, trk.track_id)] = existing
+                trk.global_id = existing
 
     @staticmethod
     def _cosine_similarity(feat1: np.ndarray, feat2: np.ndarray) -> float:

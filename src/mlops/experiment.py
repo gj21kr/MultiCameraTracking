@@ -1,9 +1,18 @@
-"""MLflow experiment tracking integration."""
+"""MLflow experiment tracking integration.
 
-import mlflow
+NOTE: MLflow is an optional dependency (frozen Non-goal, see strategy ADR-001).
+The import is guarded so the package remains importable without mlflow installed;
+enabling tracking without it raises a clear error.
+"""
+
 from typing import Dict, Any, Optional
 from pathlib import Path
 import logging
+
+try:
+    import mlflow
+except ImportError:  # pragma: no cover - optional dependency
+    mlflow = None
 
 from ..utils.config import MLflowConfig
 
@@ -27,6 +36,14 @@ class ExperimentTracker:
 
         if not enabled:
             logger.info("Experiment tracking disabled")
+            return
+
+        if mlflow is None:
+            logger.warning(
+                "MLflow tracking requested but 'mlflow' is not installed; "
+                "disabling tracking. Run: pip install mlflow"
+            )
+            self.enabled = False
             return
 
         # Set tracking URI

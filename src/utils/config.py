@@ -1,9 +1,41 @@
 """Configuration management for Tracking_101."""
 
+import logging
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_device(requested: str) -> str:
+    """
+    Resolve a requested torch device against actual hardware availability.
+
+    Falls back to CPU when CUDA is requested but unavailable (ADR-005).
+
+    Args:
+        requested: Requested device string (e.g. "cuda:0", "cuda", "cpu").
+
+    Returns:
+        A usable device string ("cuda:0"/"cuda" if available, else "cpu").
+    """
+    if requested is None or str(requested).lower() == "cpu":
+        return "cpu"
+
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return requested
+        logger.warning(
+            "Requested device '%s' but CUDA is not available; falling back to CPU.",
+            requested,
+        )
+        return "cpu"
+    except ImportError:
+        logger.warning("torch not importable; using CPU.")
+        return "cpu"
 
 
 @dataclass

@@ -1,6 +1,7 @@
 """Main tracking pipeline integrating all components."""
 
 import time
+import cv2
 import numpy as np
 from typing import Dict, List, Optional
 import logging

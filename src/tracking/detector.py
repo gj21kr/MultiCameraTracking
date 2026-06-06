@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 from dataclasses import dataclass
 import logging
 
-from ..utils.config import DetectorConfig
+from ..utils.config import DetectorConfig, resolve_device
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class Detector:
             RuntimeError: If model loading fails
         """
         self.config = config
-        self.device = torch.device(config.device)
+        self.device = torch.device(resolve_device(config.device))
 
         # Load model
         model_path = config.model_path or f"models/{config.model_type}.pt"
@@ -76,13 +76,30 @@ class Detector:
 
         model_file = Path(model_path)
 
-        if not model_file.exists():
-            logger.warning(f"Model not found: {model_path}")
-            logger.info(f"Downloading default {self.config.model_type} model...")
-            # YOLO26 models: yolo26n, yolo26s, yolo26m, yolo26l, yolo26x
-            model = YOLO(f'{self.config.model_type}.pt')
-        else:
+        if model_file.exists():
             model = YOLO(model_path)
+        else:
+            # Auto-download by model name, with a robust fallback.
+            # yolo26* requires a recent ultralytics; if it cannot be resolved
+            # (older ultralytics / asset missing) fall back to yolo11s. (FEAT-2)
+            primary = f"{self.config.model_type}.pt"
+            fallback = "yolo11s.pt"
+            logger.warning(f"Model file not found: {model_path}")
+            logger.info(f"Attempting auto-download of '{primary}'...")
+            try:
+                model = YOLO(primary)
+                self.weight_name = primary
+            except Exception as e:
+                if primary == fallback:
+                    raise
+                logger.warning(
+                    f"Could not resolve '{primary}' ({type(e).__name__}: {e}); "
+                    f"falling back to '{fallback}'."
+                )
+                model = YOLO(fallback)
+                self.weight_name = fallback
+        if not hasattr(self, "weight_name"):
+            self.weight_name = model_path
 
         # Move to device
         model.to(self.device)

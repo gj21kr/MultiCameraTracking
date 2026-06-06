@@ -1,48 +1,26 @@
-# Core dependencies
-numpy>=1.24.0
-opencv-python>=4.8.0
-scipy>=1.11.0
-
-# Deep learning
-torch>=2.0.0
-torchvision>=0.15.0
-ultralytics>=8.5.0  # YOLO26 (requires 8.5.0+ for YOLO26 support)
-
-# ReID
-torchreid>=2.0.0
-
-# MLOps
-mlflow>=2.8.0
-prometheus-client>=0.18.0
-
-# Data versioning
-dvc>=3.0.0
-dvc-s3>=3.0.0
-
-# API
-fastapi>=0.104.0
-uvicorn>=0.24.0
-websockets>=12.0
-python-multipart>=0.0.6
-
-# Configuration
+# --- Core (required for make_demo.py) ---
+numpy>=1.24
+scipy>=1.11
+opencv-python>=4.8
+torch>=2.0
+torchvision>=0.15
+ultralytics>=8.4.60      # YOLO detection (yolo26s; falls back to yolo11s)
 pyyaml>=6.0
-python-dotenv>=1.0.0
+imageio>=2.30            # demo GIF export
 
-# Utilities
-tqdm>=4.66.0
-Pillow>=10.0.0
+# --- Cross-camera ReID (optional: enables `--reid`) ---
+# torchreid pulls gdown + tensorboard transitively.
+torchreid>=1.4
+gdown>=4.0
+tensorboard>=2.10
 
-# Testing
-pytest>=7.4.0
-pytest-cov>=4.1.0
-pytest-benchmark>=4.0.0
+# --- Frozen / Non-goal stack (NOT needed for the demo; see README "Not in scope") ---
+# Install only if you revive the MLOps / API extensions.
+# mlflow>=2.8
+# prometheus-client>=0.18
+# dvc>=3.0
+# fastapi>=0.104
+# uvicorn>=0.24
 
-# Code quality
-black>=23.0.0
-flake8>=6.1.0
-mypy>=1.6.0
-pre-commit>=3.5.0
-
-# Optional: Jetson support
-# jetson-stats
+# --- Dev / test ---
+pytest>=7.4

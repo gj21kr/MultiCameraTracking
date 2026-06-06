@@ -9,7 +9,7 @@ from typing import List, Optional
 from pathlib import Path
 import logging
 
-from ..utils.config import ReIDConfig
+from ..utils.config import ReIDConfig, resolve_device
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class ReIDExtractor:
             RuntimeError: If model loading fails
         """
         self.config = config
-        self.device = torch.device(config.device)
+        self.device = torch.device(resolve_device(config.device))
 
         # Load model
         self.model = self._load_model()
@@ -46,10 +46,18 @@ class ReIDExtractor:
 
     def _load_model(self) -> nn.Module:
         """Load OSNet model."""
+        self.is_dummy = False
         try:
             import torchreid
         except ImportError:
-            logger.warning("torchreid not installed, using dummy ReID")
+            self.is_dummy = True
+            logger.warning(
+                "=" * 70 + "\n"
+                "  torchreid NOT installed -> using DUMMY ReID (random embeddings).\n"
+                "  Cross-camera association will be MEANINGLESS in this mode.\n"
+                "  For real cross-camera IDs: pip install torchreid  (see FEAT-8)\n"
+                + "=" * 70
+            )
             return self._create_dummy_model()
 
         # Build model

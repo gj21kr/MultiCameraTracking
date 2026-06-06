@@ -38,10 +38,10 @@ env/
 .ipynb_checkpoints
 *.ipynb
 
-# Data
-data/
-datasets/
-!data/.gitkeep
+# Data (top-level only; do NOT ignore the src/data source package)
+/data/
+/datasets/
+!/data/.gitkeep
 
 # Models
 models/*.pt

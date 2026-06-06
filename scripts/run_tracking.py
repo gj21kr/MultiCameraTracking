@@ -1,6 +1,7 @@
 """Main script to run the tracking pipeline."""
 
 import sys
+import time
 import argparse
 import logging
 from pathlib import Path
@@ -143,7 +144,6 @@ def main():
         pipeline.start()
 
         frame_count = 0
-        import time
 
         while True:
             # Capture frames

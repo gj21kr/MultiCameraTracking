@@ -1,8 +1,19 @@
-"""Prometheus metrics collector."""
+"""Prometheus metrics collector.
 
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
+NOTE: prometheus_client is an optional dependency (frozen Non-goal, see strategy
+ADR-001). The import is guarded so the package stays importable without it.
+"""
+
 from typing import Dict, Optional
 import logging
+
+try:
+    from prometheus_client import Counter, Gauge, Histogram, start_http_server
+    _PROMETHEUS_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    Counter = Gauge = Histogram = None
+    start_http_server = None
+    _PROMETHEUS_AVAILABLE = False
 
 from ..utils.config import PrometheusConfig
 
@@ -25,6 +36,14 @@ class MetricsCollector:
 
         if not enabled:
             logger.info("Metrics collection disabled")
+            return
+
+        if not _PROMETHEUS_AVAILABLE:
+            logger.warning(
+                "Metrics requested but 'prometheus_client' is not installed; "
+                "disabling metrics. Run: pip install prometheus-client"
+            )
+            self.enabled = False
             return
 
         # Define metrics
