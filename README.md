@@ -23,7 +23,7 @@ FrameSource (WILDTRACK / video / images)
 ![WILDTRACK demo](demo/wildtrack_demo.gif)
 
 *7 camera views of the same plaza, pedestrians detected and tracked per view.
-Full clip: [`demo/wildtrack_grid.mp4`](demo/wildtrack_grid.mp4) (80 frames, ~13 tracks/view).
+Full clip: [`demo/wildtrack_grid.mp4`](demo/wildtrack_grid.mp4) (80 frames, ~13 detections per view per frame).
 Reproduce with the WILDTRACK command in **Quick Start**.*
 
 <details>
@@ -49,9 +49,9 @@ python scripts/make_demo.py --self-test
 
 # 3. Generate the real WILDTRACK demo (after downloading the dataset, see below)
 python scripts/make_demo.py \
-    --dataset wildtrack --root data/wildtrack \
+    --dataset wildtrack --root data/Wildtrack_dataset \
     --cameras 1,2,3,4,5,6,7 \
-    --max-frames 100 --model yolo26s --conf 0.4
+    --max-frames 80 --model yolo26s --conf 0.3
 ```
 
 Outputs land in `outputs/`:
@@ -64,15 +64,22 @@ Outputs land in `outputs/`:
 WILDTRACK is **not** included (it contains identifiable pedestrians — only the
 generated videos are meant to be shared).
 
-1. Download from the [EPFL CVLAB page](https://www.epfl.ch/labs/cvlab/data/data-wildtrack/)
-   (7 synchronized 1080p cameras, 400 annotated frames @ 2 fps).
-2. Extract so the layout is:
+1. Download `Wildtrack_dataset_full.zip` (~6.8 GB) from the
+   [EPFL CVLAB page](https://www.epfl.ch/labs/cvlab/data/data-wildtrack/)
+   (7 synchronized 1080p cameras, 400 annotated frames @ 2 fps) into `data/`.
+2. **Extract with the bundled extractor** — the official archive is a >4 GB
+   *non-zip64* zip, so standard `unzip` / `tar` / Explorer report a "damaged
+   archive" and fail. This repo ships a robust sequential extractor:
+   ```bash
+   python scripts/extract_wildtrack.py data/Wildtrack_dataset_full.zip data --filter Image_subsets
    ```
-   data/wildtrack/Image_subsets/C1/00000000.png ...
-   data/wildtrack/Image_subsets/C2/...
-   ...                          C7/...
+   This yields:
    ```
-3. Run the command in step 3 above.
+   data/Wildtrack_dataset/Image_subsets/C1/00000000.png ...
+   data/Wildtrack_dataset/Image_subsets/C2/...
+   ...                                  C7/...
+   ```
+3. Run the WILDTRACK command in **Quick Start** (`--root data/Wildtrack_dataset`).
 
 The loader (`from_wildtrack`) auto-discovers `C1..C7`, so any subset of cameras works.
 
