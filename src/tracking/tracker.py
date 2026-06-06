@@ -30,73 +30,67 @@ class Track:
 
 
 class KalmanFilter:
-    """Simple Kalman filter for 2D bounding box tracking."""
+    """Constant-velocity Kalman filter on bbox state [cx, cy, w, h, vx, vy, vw, vh].
 
-    def __init__(self):
-        """Initialize Kalman filter with constant velocity model."""
-        # State: [x, y, vx, vy, w, h]
-        self.dt = 1.0  # time step
-        self.state = np.zeros(6)
+    A proper recursive estimator with covariance (replaces the previous
+    fixed-gain alpha=0.5 smoother): predict propagates state + covariance under
+    a constant-velocity model; update applies the optimal Kalman gain. This
+    reduces positional jitter and ID switches versus the fixed-gain version.
+    """
 
-        # Process noise
-        self.Q = np.eye(6) * 0.01
+    def __init__(self, bbox: np.ndarray, dt: float = 1.0):
+        self.dt = dt
+        # State transition (constant velocity): position += velocity * dt.
+        self.F = np.eye(8)
+        for i in range(4):
+            self.F[i, i + 4] = dt
+        # Measurement matrix: observe [cx, cy, w, h].
+        self.H = np.zeros((4, 8))
+        self.H[:4, :4] = np.eye(4)
 
-        # Measurement noise
-        self.R = np.eye(4) * 1.0
+        # Noise covariances (tuned for pixel-scale boxes).
+        self.Q = np.eye(8)
+        self.Q[4:, 4:] *= 0.01   # velocity process noise (small, smooth motion)
+        self.Q[:4, :4] *= 1.0
+        self.R = np.eye(4) * 10.0  # measurement noise
 
-    def predict(self, state: np.ndarray) -> np.ndarray:
-        """
-        Predict next state.
+        cx, cy, w, h = self._to_z(bbox)
+        self.x = np.array([cx, cy, w, h, 0, 0, 0, 0], dtype=float)
+        self.P = np.eye(8)
+        self.P[4:, 4:] *= 1000.0  # high initial velocity uncertainty
+        self.P *= 10.0
 
-        Args:
-            state: Current state [x, y, vx, vy, w, h]
+    @staticmethod
+    def _to_z(bbox: np.ndarray) -> np.ndarray:
+        x1, y1, x2, y2 = bbox
+        return np.array([(x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1], dtype=float)
 
-        Returns:
-            Predicted state
-        """
-        x, y, vx, vy, w, h = state
+    def _to_bbox(self) -> np.ndarray:
+        cx, cy, w, h = self.x[:4]
+        w = max(w, 1.0)
+        h = max(h, 1.0)
+        return np.array([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
 
-        # Constant velocity model
-        x_pred = x + vx * self.dt
-        y_pred = y + vy * self.dt
+    def predict(self) -> np.ndarray:
+        self.x = self.F @ self.x
+        self.P = self.F @ self.P @ self.F.T + self.Q
+        return self._to_bbox()
 
-        return np.array([x_pred, y_pred, vx, vy, w, h])
+    def update(self, bbox: np.ndarray) -> np.ndarray:
+        z = self._to_z(bbox)
+        y = z - self.H @ self.x
+        S = self.H @ self.P @ self.H.T + self.R
+        K = self.P @ self.H.T @ np.linalg.inv(S)
+        self.x = self.x + K @ y
+        self.P = (np.eye(8) - K @ self.H) @ self.P
+        return self._to_bbox()
 
-    def update(
-        self,
-        state: np.ndarray,
-        measurement: np.ndarray
-    ) -> np.ndarray:
-        """
-        Update state with measurement.
+    @property
+    def velocity(self) -> np.ndarray:
+        return self.x[4:6].copy()
 
-        Args:
-            state: Predicted state [x, y, vx, vy, w, h]
-            measurement: Measurement [x, y, w, h]
-
-        Returns:
-            Updated state
-        """
-        x, y, vx, vy, w, h = state
-        x_meas, y_meas, w_meas, h_meas = measurement
-
-        # Compute velocity from measurement
-        vx_new = x_meas - x
-        vy_new = y_meas - y
-
-        # Simple weighted update (Kalman gain = 0.5)
-        alpha = 0.5
-
-        x_updated = x + alpha * (x_meas - x)
-        y_updated = y + alpha * (y_meas - y)
-        vx_updated = vx + alpha * (vx_new - vx)
-        vy_updated = vy + alpha * (vy_new - vy)
-        w_updated = w + alpha * (w_meas - w)
-        h_updated = h + alpha * (h_meas - h)
-
-        return np.array([
-            x_updated, y_updated, vx_updated, vy_updated, w_updated, h_updated
-        ])
+    def current_bbox(self) -> np.ndarray:
+        return self._to_bbox()
 
 
 class ByteTracker:
@@ -146,10 +140,8 @@ class ByteTracker:
         for track in self.tracks:
             if track.track_id in self.kalman_filters:
                 kf = self.kalman_filters[track.track_id]
-                state = self._bbox_to_state(track.bbox, track.velocity)
-                pred_state = kf.predict(state)
-                track.bbox = self._state_to_bbox(pred_state)
-                track.velocity = pred_state[2:4]
+                track.bbox = kf.predict()
+                track.velocity = kf.velocity
 
         # First association with high confidence detections
         matched, unmatched_tracks, unmatched_dets = self._associate(
@@ -261,16 +253,11 @@ class ByteTracker:
         """Update track with matched detection."""
         # Update Kalman filter
         if track.track_id not in self.kalman_filters:
-            self.kalman_filters[track.track_id] = KalmanFilter()
+            self.kalman_filters[track.track_id] = KalmanFilter(track.bbox)
 
         kf = self.kalman_filters[track.track_id]
-        state = self._bbox_to_state(track.bbox, track.velocity)
-        measurement = self._bbox_to_measurement(detection.bbox)
-        updated_state = kf.update(state, measurement)
-
-        # Update track
-        track.bbox = self._state_to_bbox(updated_state)
-        track.velocity = updated_state[2:4]
+        track.bbox = kf.update(detection.bbox)
+        track.velocity = kf.velocity
         track.confidence = detection.confidence
         track.hits += 1
         track.age += 1
@@ -300,7 +287,7 @@ class ByteTracker:
         )
 
         self.tracks.append(track)
-        self.kalman_filters[track.track_id] = KalmanFilter()
+        self.kalman_filters[track.track_id] = KalmanFilter(detection.bbox)
         self.next_track_id += 1
 
         return track
@@ -331,38 +318,6 @@ class ByteTracker:
         union_area = area1 + area2 - inter_area
 
         return inter_area / union_area if union_area > 0 else 0.0
-
-    @staticmethod
-    def _bbox_to_state(bbox: np.ndarray, velocity: np.ndarray) -> np.ndarray:
-        """Convert bbox to Kalman state [x, y, vx, vy, w, h]."""
-        x1, y1, x2, y2 = bbox
-        x = (x1 + x2) / 2
-        y = (y1 + y2) / 2
-        w = x2 - x1
-        h = y2 - y1
-        vx, vy = velocity
-        return np.array([x, y, vx, vy, w, h])
-
-    @staticmethod
-    def _bbox_to_measurement(bbox: np.ndarray) -> np.ndarray:
-        """Convert bbox to measurement [x, y, w, h]."""
-        x1, y1, x2, y2 = bbox
-        x = (x1 + x2) / 2
-        y = (y1 + y2) / 2
-        w = x2 - x1
-        h = y2 - y1
-        return np.array([x, y, w, h])
-
-    @staticmethod
-    def _state_to_bbox(state: np.ndarray) -> np.ndarray:
-        """Convert Kalman state to bbox [x1, y1, x2, y2]."""
-        x, y, _, _, w, h = state
-        x1 = x - w / 2
-        y1 = y - h / 2
-        x2 = x + w / 2
-        y2 = y + h / 2
-        return np.array([x1, y1, x2, y2])
-
 
 class MultiCameraTracker:
     """Multi-camera tracker with cross-camera association."""

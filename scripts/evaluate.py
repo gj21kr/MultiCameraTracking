@@ -77,6 +77,8 @@ def main():
     ap.add_argument("--model", default="yolo26s")
     ap.add_argument("--model-path", default="models/yolo26s.pt")
     ap.add_argument("--conf", type=float, default=0.3)
+    ap.add_argument("--track-buffer", type=int, default=30, help="max frames a lost track coasts")
+    ap.add_argument("--match-thresh", type=float, default=0.3, help="min IoU to accept a match")
     ap.add_argument("--iou", type=float, default=0.5, help="IoU match threshold for MOT")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--reid", action="store_true")
@@ -98,8 +100,10 @@ def main():
     detector = Detector(DetectorConfig(
         model_type=args.model, model_path=args.model_path,
         confidence_threshold=args.conf, classes=[0], device=device, fp16=True))
-    tracker = MultiCameraTracker(TrackerConfig(track_thresh=args.conf, use_reid=args.reid),
-                                 num_cameras=len(cameras))
+    tracker = MultiCameraTracker(
+        TrackerConfig(track_thresh=args.conf, match_thresh=args.match_thresh,
+                      track_buffer=args.track_buffer, use_reid=args.reid),
+        num_cameras=len(cameras))
     reid = None
     if args.reid:
         from src.tracking.reid import ReIDExtractor

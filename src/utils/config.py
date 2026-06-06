@@ -68,7 +68,10 @@ class TrackerConfig:
     """Multi-object tracker configuration."""
     algorithm: str = "bytetrack"
     track_thresh: float = 0.5
-    match_thresh: float = 0.8
+    # Minimum IoU to accept a track<->detection match. ByteTrack-style values are
+    # ~0.2-0.3; the previous 0.8 was far too strict and broke association for any
+    # non-trivial motion (caused tracks to never confirm / frequent ID switches).
+    match_thresh: float = 0.3
     track_buffer: int = 30
     min_box_area: int = 10
     use_reid: bool = True

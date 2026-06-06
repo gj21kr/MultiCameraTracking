@@ -103,17 +103,33 @@ Useful flags: `--cameras 1,2,3` · `--max-frames N` · `--step K` · `--conf 0.4
 |-------|------|-------|
 | Input abstraction | [src/data/sources.py](src/data/sources.py) | `FrameSource` → WILDTRACK / video / image-seq / synthetic |
 | Detection | [src/tracking/detector.py](src/tracking/detector.py) | Ultralytics YOLO (`yolo26s`, auto-falls back to `yolo11s`) |
-| Tracking | [src/tracking/tracker.py](src/tracking/tracker.py) | Per-camera ByteTrack-style association + constant-velocity smoothing |
-| Cross-camera ReID | [src/tracking/reid.py](src/tracking/reid.py) | OSNet (torchreid) embeddings + union-find global IDs |
+| Tracking | [src/tracking/tracker.py](src/tracking/tracker.py) | Per-camera ByteTrack-style association + constant-velocity **Kalman filter** |
+| Cross-camera (appearance) | [src/tracking/reid.py](src/tracking/reid.py) | OSNet (torchreid) embeddings + union-find global IDs |
+| Cross-camera (geometric) | [src/tracking/calibration.py](src/tracking/calibration.py) | Calibration foot-point → ground plane fusion (WILDTRACK) |
+| Evaluation | [scripts/evaluate.py](scripts/evaluate.py) · [scripts/evaluate_ground.py](scripts/evaluate_ground.py) | per-camera MOTA/IDF1 + ground-plane MODA/MODP |
 | Video output | [src/tracking/video_writer.py](src/tracking/video_writer.py) | `mp4v` per-camera + grid montage |
 | Orchestration | [scripts/make_demo.py](scripts/make_demo.py) | Single reproducible entry point |
 
 ### Honest implementation notes
-- The "Kalman filter" in the tracker is a lightweight constant-velocity /
-  fixed-gain smoother, **not** a full Kalman filter — sufficient for the demo.
-- Cross-camera association is **per-frame** (no temporal smoothing across frames yet).
-- Cross-camera IDs require `--reid`; without torchreid installed, ReID falls back to
+- The tracker uses a proper constant-velocity **Kalman filter** (state
+  `[cx,cy,w,h,vx,vy,vw,vh]` with covariance), not a fixed-gain smoother.
+- Cross-camera association is **per-frame** (no temporal smoothing across frames yet),
+  available via appearance (`--reid`, OSNet) or geometry (calibration, ground plane).
+- Cross-camera IDs via `--reid` require torchreid; without it, ReID falls back to
   random embeddings and prints a loud warning (so it is never silently meaningless).
+
+## Performance
+
+Quantitative evaluation, methodology, and honest limits are in
+**[docs/PERFORMANCE.md](docs/PERFORMANCE.md)**. Highlights (WILDTRACK, CPU):
+
+- **Measurement matters**: per-camera 2D MOTA is misleading on WILDTRACK (GT boxes
+  are projected ground cylinders) → the project evaluates on the **ground plane**
+  (MODA/MODP), the dataset's intended space.
+- **Cross-camera geometric fusion** roughly **halves false positives** (5915→3154)
+  by collapsing the same person across 7 cameras to one world detection.
+- **Detection + track-lifecycle tuning** cuts FP **−80%** and ID-switches **−79%**
+  and **doubles IDF1** (0.091→0.180) vs the naive baseline (precision↔recall trade-off).
 
 ## Tests
 
