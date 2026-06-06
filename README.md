@@ -130,6 +130,13 @@ Quantitative evaluation, methodology, and honest limits are in
   by collapsing the same person across 7 cameras to one world detection.
 - **Detection + track-lifecycle tuning** cuts FP **−80%** and ID-switches **−79%**
   and **doubles IDF1** (0.091→0.180) vs the naive baseline (precision↔recall trade-off).
+- **Appearance in association** (`--reid`) cuts ID-switches a further **−25%** at flat recall.
+- **Region masking** (drop detections outside the annotated area) is the biggest
+  no-training lever on the ground metric: **MODA −0.84 → −0.15, F1 +33%**.
+- **SAHI-style tiling** (`--tile 2x3`) and `--imgsz 1280` raise raw detection
+  recall (0.70→0.79) but add out-of-region FP — only worth it with domain
+  fine-tuning (GPU). Honest finding: on the balanced metric, imgsz 640 + region
+  mask wins.
 
 ## Tests
 

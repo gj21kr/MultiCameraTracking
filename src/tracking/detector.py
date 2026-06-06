@@ -161,6 +161,69 @@ class Detector:
 
         return detections
 
+    def detect_tiled(
+        self,
+        frame: np.ndarray,
+        rows: int = 2,
+        cols: int = 3,
+        overlap: float = 0.2,
+        nms_iou: float = 0.6,
+    ) -> List[Detection]:
+        """SAHI-style sliced inference for small/distant objects (no training).
+
+        Splits the frame into an overlapping ``rows x cols`` grid, runs detection
+        on each tile (in one batch), maps boxes back to full-image coordinates,
+        and removes duplicates from overlap regions with a global NMS. Recovers
+        small pedestrians that vanish when a 1080p frame is squashed to imgsz.
+        """
+        H, W = frame.shape[:2]
+        tw, th = W / cols, H / rows
+        ox, oy = tw * overlap, th * overlap
+
+        tiles, origins = [], []
+        for r in range(rows):
+            for c in range(cols):
+                x1 = max(0, int(c * tw - ox)); y1 = max(0, int(r * th - oy))
+                x2 = min(W, int((c + 1) * tw + ox)); y2 = min(H, int((r + 1) * th + oy))
+                tiles.append(frame[y1:y2, x1:x2])
+                origins.append((x1, y1))
+
+        results = self.model.predict(
+            tiles, conf=self.config.confidence_threshold,
+            iou=self.config.nms_threshold, classes=self.config.classes,
+            verbose=False, imgsz=self.config.input_size[0],
+        )
+
+        dets: List[Detection] = []
+        for res, (ox0, oy0) in zip(results, origins):
+            if res.boxes is None:
+                continue
+            b = res.boxes
+            for i in range(len(b)):
+                x1, y1, x2, y2 = b.xyxy[i].cpu().numpy()
+                cls = int(b.cls[i].cpu())
+                dets.append(Detection(
+                    bbox=np.array([x1 + ox0, y1 + oy0, x2 + ox0, y2 + oy0]),
+                    confidence=float(b.conf[i].cpu()),
+                    class_id=cls, class_name=self.class_names[cls],
+                ))
+
+        return self._nms(dets, nms_iou)
+
+    @staticmethod
+    def _nms(dets: List[Detection], iou_thresh: float) -> List[Detection]:
+        """Global class-agnostic NMS over a Detection list (merges tile overlaps)."""
+        if len(dets) <= 1:
+            return dets
+        boxes = [[int(d.bbox[0]), int(d.bbox[1]),
+                  int(d.bbox[2] - d.bbox[0]), int(d.bbox[3] - d.bbox[1])] for d in dets]
+        scores = [float(d.confidence) for d in dets]
+        keep = cv2.dnn.NMSBoxes(boxes, scores, 0.0, iou_thresh)
+        if len(keep) == 0:
+            return []
+        idxs = keep.flatten() if hasattr(keep, "flatten") else [int(k) for k in keep]
+        return [dets[i] for i in idxs]
+
     def detect_batch(
         self,
         frames: List[np.ndarray]

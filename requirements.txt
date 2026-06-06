@@ -1,6 +1,7 @@
 # --- Core (required for make_demo.py) ---
 numpy>=1.24
 scipy>=1.11
+matplotlib>=3.7        # BEV / pseudo-3D trajectory plots (plot_trajectory.py)
 opencv-python>=4.8
 torch>=2.0
 torchvision>=0.15

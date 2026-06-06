@@ -116,6 +116,8 @@ def main():
     ap.add_argument("--model", default="yolo26s", help="YOLO model type")
     ap.add_argument("--model-path", help="Explicit model weight path")
     ap.add_argument("--conf", type=float, default=0.4, help="Detection confidence")
+    ap.add_argument("--imgsz", type=int, default=640, help="Detector input size")
+    ap.add_argument("--tile", default="", help="SAHI-style tiling 'RxC' e.g. 2x3 (empty=off)")
     ap.add_argument("--classes", default="0", help="Comma-separated COCO class ids (0=person)")
     ap.add_argument("--device", default="cuda:0", help="cuda:0 / cpu (auto-falls back to cpu)")
     ap.add_argument("--reid", action="store_true", help="Enable cross-camera ReID association")
@@ -145,8 +147,13 @@ def main():
     det_cfg = DetectorConfig(
         model_type=args.model, model_path=args.model_path,
         confidence_threshold=args.conf, classes=classes, device=device, fp16=True,
+        input_size=(args.imgsz, args.imgsz),
     )
     detector = Detector(det_cfg)
+    tile_rc = None
+    if args.tile:
+        _r, _c = args.tile.lower().split("x")
+        tile_rc = (int(_r), int(_c))
 
     trk_cfg = TrackerConfig(track_thresh=args.conf, use_reid=args.reid)
     tracker = MultiCameraTracker(trk_cfg, num_cameras=len(camera_ids))
@@ -175,7 +182,10 @@ def main():
 
             # Detection (batch) keeping camera order.
             cids = list(images.keys())
-            det_lists = detector.detect_batch([images[c] for c in cids])
+            if tile_rc:
+                det_lists = [detector.detect_tiled(images[c], tile_rc[0], tile_rc[1]) for c in cids]
+            else:
+                det_lists = detector.detect_batch([images[c] for c in cids])
             detections = {c: d for c, d in zip(cids, det_lists)}
             det_total += sum(len(d) for d in detections.values())
 

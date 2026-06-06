@@ -129,6 +129,39 @@ python scripts/evaluate.py --root data/Wildtrack_dataset --max-frames 100 \
     --conf 0.5 --match-thresh 0.5 --track-buffer 8
 ```
 
+## 4b. No-training detection levers (imgsz / tiling / region mask)
+
+All CPU-only, no fine-tuning. Ground plane, 40 frames, conf 0.4, radius 75 cm,
+fusion ON.
+
+Raw detection recall (fusion OFF) — bigger input *does* see more people:
+
+| detector | recall | precision |
+|---|---|---|
+| imgsz 640 | 0.699 | 0.224 |
+| imgsz 1280 | 0.790 | 0.144 |
+| tiled 2×3 @640 (SAHI-style) | 0.791 | 0.109 |
+
+But the extra detections are largely **people outside the annotated ground
+region** (spectators, adjacent areas) → precision collapses. The fix is also
+no-training: **mask predictions to the GT-annotated region** (`--mask-region`):
+
+| config | MODA (no mask) | MODA (+mask) | F1 (no mask) | F1 (+mask) |
+|---|---|---|---|---|
+| **imgsz 640** | −0.84 | **−0.15** | 0.331 | **0.443** |
+| imgsz 1280 | −2.31 | −0.45 | 0.227 | 0.400 |
+| tiled 2×3 | −3.08 | −0.73 | 0.182 | 0.344 |
+
+Findings:
+- **Region masking is the single biggest no-training win**: MODA −0.84→−0.15,
+  F1 +33% (imgsz 640).
+- **Bigger ≠ better here**: imgsz 1280 / tiling raise raw recall (0.70→0.79) but
+  add more out-of-region / fragment FP than masking removes, so on the balanced
+  metric **imgsz 640 + region mask wins** (F1 0.443). Higher imgsz only pays off
+  once detections are also fine-tuned to the domain (needs GPU, §6).
+- Net effect of the no-training stack on the correct (ground) metric: MODA
+  **−2.02 (naive baseline) → −0.15** (imgsz 640 + fusion + region mask).
+
 ## 5. Speed
 
 CPU, `yolo26s`, 1080×1920: ~0.9 fps end-to-end (7 cameras). Offline demo
