@@ -75,6 +75,13 @@ class TrackerConfig:
     track_buffer: int = 30
     min_box_area: int = 10
     use_reid: bool = True
+    # Appearance-aware association (DeepSORT/BoT-SORT style). When detections and
+    # tracks carry ReID embeddings, fuse appearance into the matching cost and
+    # accept a match when EITHER IoU or appearance is convincing -> holds IDs
+    # through low-IoU / low-confidence frames without raising detection conf.
+    appearance_weight: float = 0.5      # weight of appearance vs IoU in cost
+    appearance_thresh: float = 0.5      # min cosine sim to accept an appearance match
+    appearance_iou_gate: float = 0.1    # min IoU still required for an appearance match
 
 
 @dataclass

@@ -218,20 +218,49 @@ class ByteTracker:
                 list(range(len(detections)))
             )
 
-        # Compute IoU cost matrix
+        # Compute IoU matrix
         iou_matrix = np.zeros((len(tracks), len(detections)))
-
         for i, track in enumerate(tracks):
             for j, det in enumerate(detections):
                 iou_matrix[i, j] = self._iou(track.bbox, det.bbox)
 
-        # Hungarian algorithm
-        row_ind, col_ind = linear_sum_assignment(-iou_matrix)
+        # Optionally fuse appearance (ReID) into the cost. sim is NaN where an
+        # embedding is missing on either side.
+        sim_matrix = None
+        if self.config.use_reid:
+            sim_matrix = np.full((len(tracks), len(detections)), np.nan)
+            for i, track in enumerate(tracks):
+                if track.embedding is None:
+                    continue
+                for j, det in enumerate(detections):
+                    if det.embedding is None:
+                        continue
+                    sim_matrix[i, j] = self._cos(track.embedding, det.embedding)
 
-        # Filter by IoU threshold
+        if sim_matrix is not None:
+            w = self.config.appearance_weight
+            have = ~np.isnan(sim_matrix)
+            app_cost = 1.0 - np.where(have, sim_matrix, 0.0)
+            iou_cost = 1.0 - iou_matrix
+            cost = np.where(have, w * app_cost + (1.0 - w) * iou_cost, iou_cost)
+        else:
+            cost = 1.0 - iou_matrix
+
+        # Hungarian algorithm on the (lower-is-better) cost matrix
+        row_ind, col_ind = linear_sum_assignment(cost)
+
+        # Accept a match if EITHER spatial overlap OR appearance is convincing
+        # (appearance still needs a minimal IoU gate to stay plausible).
         matched = []
         for i, j in zip(row_ind, col_ind):
-            if iou_matrix[i, j] >= self.config.match_thresh:
+            ok_iou = iou_matrix[i, j] >= self.config.match_thresh
+            ok_app = (
+                sim_matrix is not None
+                and not np.isnan(sim_matrix[i, j])
+                and sim_matrix[i, j] >= self.config.appearance_thresh
+                and iou_matrix[i, j] >= self.config.appearance_iou_gate
+            )
+            if ok_iou or ok_app:
                 matched.append((i, j))
 
         # Find unmatched
@@ -297,6 +326,12 @@ class ByteTracker:
         x1, y1, x2, y2 = detection.bbox
         area = (x2 - x1) * (y2 - y1)
         return area >= self.config.min_box_area
+
+    @staticmethod
+    def _cos(a: np.ndarray, b: np.ndarray) -> float:
+        """Cosine similarity between two (already ~normalized) embeddings."""
+        denom = (np.linalg.norm(a) * np.linalg.norm(b)) + 1e-8
+        return float(np.dot(a, b) / denom)
 
     @staticmethod
     def _iou(bbox1: np.ndarray, bbox2: np.ndarray) -> float:

@@ -106,6 +106,23 @@ Honest reading:
   without needing high conf, and/or raise `imgsz` to recover small-pedestrian
   recall (§6).
 
+**Appearance in association (D).** Fusing OSNet embeddings into the matching
+cost (accept a match when IoU *or* appearance is convincing, `--reid`),
+conf 0.3, 100 frames:
+
+| metric | IoU-only (③) | +appearance (D) |
+|---|---|---|
+| num_switches | 1090 | **820** (−25%) |
+| recall | 0.449 | 0.421 |
+| IDF1 | 0.106 | **0.117** |
+| num_false_positives | 24752 | **21209** |
+
+Honest reading: appearance cuts ID-switches ~25% at flat recall — a real but
+**marginal** gain. It does not change the verdict: recall ~0.42 means ~58% of
+pedestrians are still missed. The ceiling of association-level tuning is low;
+the bottleneck is **detection recall** and the **detection-level (vs
+feature-level) fusion architecture** — see §6.
+
 Reproduce:
 ```bash
 python scripts/evaluate.py --root data/Wildtrack_dataset --max-frames 100 \
