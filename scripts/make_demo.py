@@ -23,7 +23,9 @@ import json
 import time
 import argparse
 import logging
+from collections import defaultdict
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -170,6 +172,26 @@ def main():
         write_per_camera=not args.no_per_camera, write_grid=not args.no_grid,
     )
 
+    # --- Trajectory accumulation state (A2.2, FEAT-11) ---
+    # Accumulates (t, X_m, Y_m) per global_id using ground-plane projection.
+    # Only active when source is WILDTRACK (calibration available).
+    # Non-destructive: mp4 output is completely unaffected.
+    pred_trajectories: Dict[int, List] = defaultdict(list)
+    _calib_for_hook: Optional[object] = None
+    _hook_global_id_map: Dict[Tuple[int, int], int] = {}   # (cam_id, track_id) -> global_id  [geometric]
+    _hook_next_id: List = [0]        # mutable next-id counter [geometric]
+    if not args.self_test and args.dataset == "wildtrack" and args.root:
+        try:
+            from src.tracking.calibration import WildtrackCalibration
+            _calib_root = str(Path(args.root) / "calibrations")
+            _calib_for_hook = WildtrackCalibration.from_dir(_calib_root)
+            logger.info("Trajectory hook: calibration loaded from %s", _calib_root)
+        except Exception as exc:
+            logger.warning(
+                "Trajectory hook: calibration load failed (%s) — hook disabled.", exc
+            )
+            _calib_for_hook = None
+
     # --- Process loop ---
     n = 0
     det_total = 0
@@ -199,6 +221,41 @@ def main():
 
             tracks = tracker.update(detections, images)
 
+            # --- Trajectory hook (A2.2): accumulate ground-plane positions ---
+            # Append (frame_index, X_m, Y_m) per global_id.
+            # foot_to_ground returns cm; /100 converts to metres for GT parity.
+            #
+            # global_id assignment strategy:
+            #   - If ReID is active, tracks already have global_id from
+            #     associate_cross_camera.
+            #   - If ReID is inactive (default), we fall back to geometric
+            #     cross-camera association via assign_global_ids_geometric
+            #     (calibration.py) so the trajectory hook always has IDs.
+            #   Per-camera track_id is used as a fallback key when geometry
+            #   cannot link across cameras (single-view global_id).
+            if _calib_for_hook is not None:
+                if not args.reid:
+                    # Geometric global_id assignment using ground-plane proximity.
+                    from src.tracking.calibration import assign_global_ids_geometric
+                    assign_global_ids_geometric(
+                        all_tracks=tracks,
+                        calib=_calib_for_hook,
+                        global_id_map=_hook_global_id_map,
+                        next_id_box=_hook_next_id,
+                        dist_thresh_cm=100.0,
+                    )
+                for cam_id, cam_tracks in tracks.items():
+                    for trk in cam_tracks:
+                        gid = trk.global_id
+                        if gid is None:
+                            continue
+                        ground_cm = _calib_for_hook.foot_to_ground(cam_id, trk.bbox)
+                        if ground_cm is None or not np.all(np.isfinite(ground_cm)):
+                            continue
+                        x_m = float(ground_cm[0]) / 100.0
+                        y_m = float(ground_cm[1]) / 100.0
+                        pred_trajectories[gid].append([n, x_m, y_m])
+
             annotated = {
                 c: draw_tracks(images[c], tracks.get(c, []),
                                use_global_id=args.reid, cam_id=c)
@@ -211,6 +268,22 @@ def main():
                 logger.info("processed %d frames...", n)
 
     elapsed = time.time() - t_start
+
+    # --- Save predicted trajectories (A2.2) ---
+    if pred_trajectories:
+        pred_traj_path = Path(args.output) / "pred_trajectory.json"
+        pred_traj_path.parent.mkdir(parents=True, exist_ok=True)
+        # JSON keys must be strings; values are [[t, X_m, Y_m], ...]
+        pred_traj_path.write_text(
+            json.dumps({str(k): v for k, v in pred_trajectories.items()}, indent=2)
+        )
+        logger.info(
+            "Predicted trajectories: %d tracks -> %s",
+            len(pred_trajectories),
+            pred_traj_path,
+        )
+    else:
+        logger.info("No predicted trajectories accumulated (hook inactive or no tracks).")
 
     # --- Run metadata ---
     meta = {

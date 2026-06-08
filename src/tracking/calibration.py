@@ -49,7 +49,14 @@ class CameraCalib:
         self.H_i2w = np.linalg.inv(H_w2i)
 
     def image_to_ground(self, uv: Tuple[float, float]) -> np.ndarray:
-        """Map an image pixel (u, v) to ground-plane world coords (X, Y)."""
+        """Map an image pixel (u, v) to ground-plane world coords (X, Y).
+
+        Returns:
+            np.ndarray shape (2,) — world (X, Y) in **centimetres** (WILDTRACK
+            tvec convention; empirically confirmed via reprojection, median
+            ~18px vs ~782px for the metre hypothesis). Divide by 100 for metres
+            to compare against ``wildtrack_grid.position_id_to_world`` (metres).
+        """
         pts = np.array([[[uv[0], uv[1]]]], dtype=np.float64)
         und = cv2.undistortPoints(pts, self.K, self.dist, P=self.K)[0, 0]
         w = self.H_i2w @ np.array([und[0], und[1], 1.0])
@@ -92,7 +99,13 @@ class WildtrackCalibration:
         return cls(cams)
 
     def foot_to_ground(self, cam_id: int, bbox: np.ndarray) -> Optional[np.ndarray]:
-        """Project a detection's foot point (bottom-center of bbox) to ground."""
+        """Project a detection's foot point (bottom-center of bbox) to ground.
+
+        Returns:
+            np.ndarray shape (2,) — world (X, Y) in **centimetres** (see
+            ``CameraCalib.image_to_ground``), or None if ``cam_id`` is unknown.
+            Divide by 100 for metres.
+        """
         cam = self.cams.get(cam_id)
         if cam is None:
             return None

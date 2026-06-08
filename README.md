@@ -1,5 +1,9 @@
 # Multi-Camera Tracking — WILDTRACK Demo
 
+![multi-camera tracking demo](demo/wildtrack_demo.gif)
+
+*7-camera WILDTRACK pedestrian tracking — best 3-second window, frames 39–44 of 400 (73 confirmed tracks, combined density+accuracy score), avg GT-vs-pred ground-plane error 1.396 m (9.8 matched pairs/frame).*
+
 Multi-camera pedestrian detection + tracking that turns a synchronized
 multi-view dataset (e.g. [WILDTRACK](https://www.epfl.ch/labs/cvlab/data/data-wildtrack/))
 into an annotated **per-camera + grid-montage demo video** with a single command.
@@ -20,10 +24,8 @@ FrameSource (WILDTRACK / video / images)
 
 ### Demo — WILDTRACK, 7 synchronized cameras
 
-![WILDTRACK demo](demo/wildtrack_demo.gif)
-
-*7 camera views of the same plaza, pedestrians detected and tracked per view.
-Full clip: [`demo/wildtrack_grid.mp4`](demo/wildtrack_grid.mp4) (80 frames, ~13 detections per view per frame).
+*7 camera views of the same plaza, pedestrians detected and tracked per view (shown above).
+Full clip: [`demo/wildtrack_grid.mp4`](demo/wildtrack_grid.mp4).
 Reproduce with the WILDTRACK command in **Quick Start**.*
 
 <details>
